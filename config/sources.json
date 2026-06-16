@@ -1,0 +1,29 @@
+{
+  "google_news_queries": [
+    "AI agent startup funding",
+    "AI coding agent",
+    "Claude Code",
+    "MCP server AI",
+    "OpenAI Codex",
+    "AI workflow automation",
+    "SpaceX IPO AI infrastructure"
+  ],
+  "rss": [
+    {"id": "techcrunch", "url": "https://techcrunch.com/category/artificial-intelligence/feed/"},
+    {"id": "venturebeat", "url": "https://venturebeat.com/category/ai/feed/"},
+    {"id": "theverge", "url": "https://www.theverge.com/rss/index.xml"},
+    {"id": "a16z", "url": "https://feeds.simplecast.com/JGE3yC0V"}
+  ],
+  "github_queries": [
+    "topic:ai-agent stars:>500 pushed:>2026-01-01",
+    "topic:mcp stars:>300 pushed:>2026-01-01",
+    "topic:llm stars:>500 pushed:>2026-01-01"
+  ],
+  "hackernews_queries": [
+    "AI agent",
+    "Claude Code",
+    "MCP",
+    "OpenAI Codex",
+    "AI workflow"
+  ]
+}
