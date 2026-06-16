@@ -13,14 +13,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = Path(os.environ.get("TREND_SOURCE_CONFIG", ROOT / "config" / "sources.json"))
-OUT = ROOT / "public" / "trendradar_source.json"
+OUT = Path(os.environ.get("TREND_SOURCE_OUT", ROOT / "public" / "trendradar_source.json"))
 UA = "zhibo-trend-source/1.0 (+https://github.com/servagent-ai/zhibo-trend-source)"
+REQUIRED_ROW_KEYS = {"title", "url", "summary", "platform", "hot", "rank", "timestamp"}
 
 
 def http_get(url: str, headers: dict[str, str] | None = None) -> str:
+    fixture_dir = os.environ.get("TREND_SOURCE_FIXTURE_DIR")
+    if fixture_dir:
+        fixture = Path(fixture_dir) / fixture_name(url)
+        return fixture.read_text(encoding="utf-8")
     req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})})
     with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
         return resp.read().decode("utf-8", errors="replace")
+
+
+def fixture_name(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", f"{parsed.netloc}_{parsed.path}_{parsed.query}").strip("_")
+    return f"{slug[:180]}.txt"
 
 
 def parse_time(raw: str | None) -> int:
@@ -46,7 +57,16 @@ def child_text(item: ET.Element, tag: str) -> str:
     return ""
 
 
-def make_row(title: str, url: str, summary: str, platform: str, hot: int, rank: int, ts: int):
+def make_row(
+    title: str,
+    url: str,
+    summary: str,
+    platform: str,
+    hot: int,
+    rank: int,
+    ts: int,
+    source_category: str,
+):
     title = " ".join((title or "").split())
     if not title:
         return None
@@ -55,6 +75,7 @@ def make_row(title: str, url: str, summary: str, platform: str, hot: int, rank: 
         "url": (url or "").strip(),
         "summary": " ".join((summary or "").split())[:1500],
         "platform": platform,
+        "source_category": source_category,
         "hot": int(hot or 0),
         "rank": int(rank or 0),
         "timestamp": int(ts or time.time()),
@@ -74,7 +95,7 @@ def fetch_rss(source_id: str, url: str):
         link = child_text(item, "link") or child_text(item, "id")
         desc = child_text(item, "description") or child_text(item, "summary") or child_text(item, "content")
         published = child_text(item, "pubDate") or child_text(item, "published") or child_text(item, "updated")
-        row = make_row(title, link, clean_html(desc), source_id, max(1, 50 - idx), idx, parse_time(published))
+        row = make_row(title, link, clean_html(desc), source_id, max(1, 50 - idx), idx, parse_time(published), "rss")
         if row:
             out.append(row)
     return out
@@ -85,6 +106,7 @@ def fetch_google_news(query: str):
     rows = fetch_rss("googlenews", f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en")
     for item in rows:
         item["summary"] = f"{query} · {item.get('summary', '')}".strip(" ·")
+        item["source_category"] = "google_news"
     return rows
 
 
@@ -109,6 +131,7 @@ def fetch_hackernews(query: str):
             points,
             int(hit.get("num_comments") or 0),
             int(hit.get("created_at_i") or time.time()),
+            "hackernews",
         )
         if row:
             out.append(row)
@@ -136,6 +159,7 @@ def fetch_github(query: str):
             int(repo.get("stargazers_count") or 0),
             int(repo.get("forks_count") or 0),
             parse_time(repo.get("pushed_at")),
+            "github",
         )
         if row:
             out.append(row)
@@ -154,8 +178,22 @@ def dedupe(items):
     return out
 
 
-def main() -> int:
-    cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+def validate_payload(payload: dict) -> None:
+    if not isinstance(payload.get("generated_at"), int):
+        raise ValueError("generated_at must be an integer timestamp")
+    if not isinstance(payload.get("items"), list):
+        raise ValueError("items must be a list")
+    for idx, item in enumerate(payload["items"]):
+        missing = REQUIRED_ROW_KEYS - set(item)
+        if missing:
+            raise ValueError(f"item {idx} missing required keys: {sorted(missing)}")
+        if not str(item.get("title") or "").strip():
+            raise ValueError(f"item {idx} has empty title")
+        if not isinstance(item.get("hot"), int) or not isinstance(item.get("rank"), int) or not isinstance(item.get("timestamp"), int):
+            raise ValueError(f"item {idx} numeric fields must be integers")
+
+
+def build_payload(cfg: dict) -> dict:
     items = []
     for query in cfg.get("google_news_queries", []):
         items.extend(fetch_google_news(query))
@@ -166,6 +204,13 @@ def main() -> int:
     for query in cfg.get("hackernews_queries", []):
         items.extend(fetch_hackernews(query))
     payload = {"generated_at": int(time.time()), "items": dedupe(items)[:500]}
+    validate_payload(payload)
+    return payload
+
+
+def main() -> int:
+    cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+    payload = build_payload(cfg)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {OUT} items={len(payload['items'])}")

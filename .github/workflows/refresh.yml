@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: refresh-trend-source
@@ -31,14 +32,40 @@ jobs:
         run: python scripts/build_trend_source.py
 
       - name: Commit refreshed JSON
+        id: commit
         run: |
           set -e
+          BRANCH="auto/refresh-trend-source"
+          git switch -C "$BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add public/trendradar_source.json
           if git diff --cached --quiet; then
             echo "No changes"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m "Refresh trend source"
-          git push
+          git push --force-with-lease origin "$BRANCH"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open refresh PR
+        id: pr
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base main \
+            --head auto/refresh-trend-source \
+            --title "Refresh trend source" \
+            --body "Automated trend source refresh. CI must pass before merge." \
+          || gh pr edit auto/refresh-trend-source \
+            --title "Refresh trend source" \
+            --body "Automated trend source refresh. CI must pass before merge."
+
+      - name: Enable auto-merge after CI
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge auto/refresh-trend-source --auto --squash
