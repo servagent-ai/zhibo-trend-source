@@ -35,7 +35,7 @@ jobs:
         id: commit
         run: |
           set -e
-          BRANCH="auto/refresh-trend-source"
+          BRANCH="data-latest"
           git switch -C "$BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -55,17 +55,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr create \
-            --base main \
-            --head auto/refresh-trend-source \
-            --title "Refresh trend source" \
-            --body "Automated trend source refresh. CI must pass before merge." \
-          || gh pr edit auto/refresh-trend-source \
-            --title "Refresh trend source" \
-            --body "Automated trend source refresh. CI must pass before merge."
+          if gh pr create \
+              --base main \
+              --head data-latest \
+              --title "Refresh trend source" \
+              --body "Automated trend source refresh. CI must pass before merge."; then
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          elif gh pr view data-latest >/dev/null 2>&1; then
+            gh pr edit data-latest \
+              --title "Refresh trend source" \
+              --body "Automated trend source refresh. CI must pass before merge."
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::GitHub Actions cannot create pull requests in this organization. data-latest was updated and main remains protected."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Enable auto-merge after CI
-        if: steps.commit.outputs.changed == 'true'
+        if: steps.pr.outputs.created == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge auto/refresh-trend-source --auto --squash
+        run: gh pr merge data-latest --auto --squash
