@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "config" / "sources.json"
+CONFIG = Path(os.environ.get("TREND_SOURCE_CONFIG", ROOT / "config" / "sources.json"))
 OUT = ROOT / "public" / "trendradar_source.json"
 UA = "zhibo-trend-source/1.0 (+https://github.com/servagent-ai/zhibo-trend-source)"
 
