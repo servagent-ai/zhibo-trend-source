@@ -36,6 +36,7 @@ jobs:
         run: |
           set -e
           BRANCH="data-latest"
+          git fetch origin "${BRANCH}:refs/remotes/origin/${BRANCH}" || true
           git switch -C "$BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -46,7 +47,7 @@ jobs:
             exit 0
           fi
           git commit -m "Refresh trend source"
-          git push --force-with-lease origin "$BRANCH"
+          git push --force-with-lease="${BRANCH}:refs/remotes/origin/${BRANCH}" origin "$BRANCH"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Open refresh PR
